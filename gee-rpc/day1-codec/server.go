@@ -40,6 +40,9 @@ var DefaultServer = NewServer()
 
 // ServeConn runs the server on a single connection.
 // ServeConn blocks, serving the connection until the client hangs up.
+//ServeConn 的实现就和之前讨论的通信过程紧密相关了，首先使用 json.NewDecoder 反序列化得到 Option 实例，
+//检查 MagicNumber 和 CodeType 的值是否正确。然后根据 CodeType 得到对应的消息编解码器，接下来的处理交给 serverCodec。
+// 总结：接收RPC的请求，验证请求的参数是否合法。如果参数合法，将请求交给 serveCodec 处理
 func (server *Server) ServeConn(conn io.ReadWriteCloser) {
 	defer func() { _ = conn.Close() }()
 	var opt Option
@@ -62,6 +65,11 @@ func (server *Server) ServeConn(conn io.ReadWriteCloser) {
 // invalidRequest is a placeholder for response argv when error occurs
 var invalidRequest = struct{}{}
 
+//serveCodec 的过程非常简单。主要包含三个阶段
+//
+//读取请求 readRequest
+//处理请求 handleRequest
+//回复请求 sendResponse
 func (server *Server) serveCodec(cc codec.Codec) {
 	sending := new(sync.Mutex) // make sure to send a complete response
 	wg := new(sync.WaitGroup)  // wait until all request are handled
@@ -133,6 +141,8 @@ func (server *Server) handleRequest(cc codec.Codec, req *request, sending *sync.
 
 // Accept accepts connections on the listener and serves requests
 // for each incoming connection.
+//实现了 Accept 方式，net.Listener 作为参数，for 循环等待 socket 连接建立，并开启子协程处理，处理过程交给了 ServerConn 方法。
+//DefaultServer 是一个默认的 Server 实例，主要为了用户使用方便。
 func (server *Server) Accept(lis net.Listener) {
 	for {
 		conn, err := lis.Accept()

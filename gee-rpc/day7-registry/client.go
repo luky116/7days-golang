@@ -21,6 +21,7 @@ import (
 )
 
 // Call represents an active RPC.
+// 结构体 Call 来承载一次 RPC 调用所需要的信息。
 type Call struct {
 	Seq           uint64
 	ServiceMethod string      // format "<service>.<method>"
@@ -39,13 +40,26 @@ func (call *Call) done() {
 // with a single Client, and a Client may be used by
 // multiple goroutines simultaneously.
 type Client struct {
-	cc       codec.Codec
-	opt      *Option
-	sending  sync.Mutex // protect following
-	header   codec.Header
-	mu       sync.Mutex // protect following
-	seq      uint64
-	pending  map[uint64]*Call
+	// 解析请求的头部、身体内容，并且写入返回结果
+	// 根据 opt 配置的编码解码方式，选择合适的类型
+	// 即，cc负责序列化
+	cc codec.Codec
+	// 编解码方式、超时时间等待
+	opt *Option
+	// sending 是一个互斥锁，和服务端类似，
+	// 为了保证请求的有序发送，即防止出现多个请求报文混淆。
+	sending sync.Mutex // protect following
+	// 请求的头部信息
+	header codec.Header
+	mu     sync.Mutex // protect following
+	// seq 用于给发送的请求编号，每个请求拥有唯一编号。
+	// 客户端当前有多少个Call（请求）
+	seq uint64
+	// pending 存储未处理完的请求，键是编号，值是 Call 实例。
+	pending map[uint64]*Call
+	// closing 和 shutdown 任意一个值置为 true，则表示 Client 处于不可用的状态，
+	// 但有些许的差别，closing 是用户主动关闭的，即调用 Close 方法，
+	// 而 shutdown 置为 true 一般是有错误发生。
 	closing  bool // user has called Close
 	shutdown bool // server has told us to stop
 }
@@ -110,6 +124,7 @@ func (client *Client) send(call *Call) {
 	defer client.sending.Unlock()
 
 	// register this call.
+	// 标记当前请求正在处理中，得到请求的序列号
 	seq, err := client.registerCall(call)
 	if err != nil {
 		call.Error = err
@@ -134,10 +149,16 @@ func (client *Client) send(call *Call) {
 	}
 }
 
+// 接收响应
+// 对一个客户端端来说，接收响应、发送请求是最重要的 2 个功能。那么首先实现接收功能，接收到的响应有三种情况：
+// call 不存在，可能是请求没有发送完整，或者因为其他原因被取消，但是服务端仍旧处理了。
+// call 存在，但服务端处理出错，即 h.Error 不为空。
+// call 存在，服务端处理正常，那么需要从 body 中读取 Reply 的值。
 func (client *Client) receive() {
 	var err error
 	for err == nil {
 		var h codec.Header
+		// todo 为啥这样读Header ？？？
 		if err = client.cc.ReadHeader(&h); err != nil {
 			break
 		}

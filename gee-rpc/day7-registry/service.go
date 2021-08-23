@@ -7,6 +7,10 @@ import (
 	"sync/atomic"
 )
 
+// method：方法本身
+// ArgType：第一个参数的类型
+// ReplyType：第二个参数的类型
+// numCalls：后续统计方法调用次数时会用到
 type methodType struct {
 	method    reflect.Method
 	ArgType   reflect.Type
@@ -41,6 +45,10 @@ func (m *methodType) newReplyv() reflect.Value {
 	return replyv
 }
 
+// name 即映射的结构体的名称，比如 T，比如 WaitGroup；
+// typ 是结构体的类型；
+// rcvr 即结构体的实例本身，保留 rcvr 是因为在调用时需要 rcvr 作为第 0 个参数；
+// method 是 map 类型，存储映射的结构体的所有符合条件的方法。
 type service struct {
 	name   string
 	typ    reflect.Type
@@ -60,6 +68,8 @@ func newService(rcvr interface{}) *service {
 	return s
 }
 
+// 两个导出或内置类型的入参（反射时为 3 个，第 0 个是自身，类似于 python 的 self，java 中的 this）
+// 返回值有且只有 1 个，类型为 error
 func (s *service) registerMethods() {
 	s.method = make(map[string]*methodType)
 	for i := 0; i < s.typ.NumMethod(); i++ {
